@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fictional 24h TV</title>
+<style>
+html,body{margin:0;height:100%;background:#000;color:#fff;font-family:sans-serif;overflow:hidden}
+#tv{position:fixed;inset:0;display:flex;flex-direction:column}
+#screen{flex:1;position:relative;display:flex;align-items:center;justify-content:center;background:radial-gradient(#111,#000)}
+#labelTop{position:absolute;top:0;left:0;right:0;height:48px;display:flex;align-items:center;justify-content:center;background:#900;font-weight:bold;letter-spacing:.2em;animation:blink 1s step-end infinite}
+@keyframes blink{50%{opacity:.4}}
+#clock{position:absolute;top:8px;right:14px;font-size:18px;opacity:.9}
+#programBadge{position:absolute;top:8px;left:14px;background:#004a9f;padding:4px 10px;border-radius:10px;font-weight:700}
+#content{max-width:900px;text-align:center;padding:20px}
+#titleBig{font-size:48px;font-weight:900}
+#text{font-size:24px;margin-top:10px;line-height:1.6}
+#countdown{margin-top:10px;font-size:18px;opacity:.9}
+#ticker{position:absolute;bottom:0;left:0;right:0;height:40px;background:#222;display:flex;align-items:center;overflow:hidden}
+#ticker span{white-space:nowrap;padding-left:100%;animation:slide 18s linear infinite}
+@keyframes slide{to{transform:translateX(-100%)}}
+#ua{height:120px;background:#111;border-top:2px solid #333;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px}
+button{padding:6px 12px;border-radius:8px;border:1px solid #666;background:#222;color:#fff;cursor:pointer}
+.uaGuide{font-size:13px;opacity:.85;text-align:center}
+.uaGuide a{color:#4aa3ff;text-decoration:underline}
+#guide{width:100%;max-height:160px;overflow:auto;border-top:1px solid #333;padding-top:6px;font-size:13px;line-height:1.5}
+#guidePanel{display:none;position:fixed;inset:10% 10%;background:#000;border:2px solid #555;padding:16px;overflow:auto;z-index:5}
+</style>
+</head>
+<body>
+<div id="tv">
+  <div id="screen">
+    <div id="labelTop">待機中</div>
+    <div id="programBadge"></div>
+    <div id="clock"></div>
+    <div id="content">
+      <div id="titleBig">電源OFF</div>
+      <div id="text"></div>
+      <div id="countdown"></div>
+    </div>
+    <div id="ticker"><span id="tickerText">これは架空の放送です</span></div>
+  </div>
+  <div id="ua">
+    <div>
+      <button id="powerBtn">電源</button>
+      <button id="guideBtn">番組表</button>
+      <button id="volDown">音量−</button>
+      <button id="volUp">音量＋</button>
+      <span id="volLabel" style="margin-left:8px"></span>
+    </div>
+    <div id="guide"></div>
+    <div class="uaGuide">
+      これは架空のテレビです。5分サイクルで時報、ニュース、天気予報、CM、音楽が流れるようにプログラムされています。不具合がありましたら恐れ入りますが以下のサイトで直してください。<br>
+      <a href="https://example.com" target="_blank">https://example.com</a>
+    </div>
+  </div>
+  <div id="guidePanel">
+      <h2>番組表</h2>
+      <h3>5分サイクル</h3>
+      <ul id="cycleList"></ul>
+      <h3>1時間後まで</h3>
+      <ul id="hourList"></ul>
+      <button id="closeGuide">閉じる</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const title=$('titleBig');
+  const text=$('text');
+  const powerBtn=$('powerBtn');
+  const guideBtn=$('guideBtn');
+  const ticker=$('tickerText');
+  const label=$('labelTop');
+  const clock=$('clock');
+  const countdown=$('countdown');
+  const programBadge=$('programBadge');
+  const guide=$('guide');
+  const panel=$('guidePanel');
+  const closeGuide=$('closeGuide');
+  const cycleList=$('cycleList');
+  const hourList=$('hourList');
+
+  // ===== basic runtime checks =====
+  function selfTest(){
+    console.assert(title&&text&&powerBtn&&ticker&&label&&clock&&countdown,'DOM elements missing');
+    console.assert(typeof Date==='function','Date not available');
+  }
+  selfTest();
+
+  // ===== clock =====
+  function updateClock(){
+    const d=new Date();
+    if(clock) clock.textContent=d.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  }
+  setInterval(updateClock,1000); updateClock();
+
+  // ===== audio =====
+  let ctx=null; let masterVolume=0.6;
+  function ensure(){ if(!ctx){ ctx=new (window.AudioContext||window.webkitAudioContext)(); } }
+  async function unlock(){ ensure(); if(ctx.state!=='running'){ try{ await ctx.resume(); }catch(e){} } }
+  function updateVolLabel(){ const l=$('volLabel'); if(l) l.textContent='音量:'+Math.round(masterVolume*100)+'%'; }
+
+  function gentleTone(freq,dur=1,vol=0.18){
+    ensure(); if(ctx.state!=='running'){ ctx.resume().catch(()=>{}); }
+    const o=ctx.createOscillator();
+    const g=ctx.createGain();
+    o.type='sine'; o.frequency.value=freq;
+    const t=ctx.currentTime;
+    g.gain.setValueAtTime(0,t);
+    g.gain.linearRampToValueAtTime(vol*masterVolume,t+0.05);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g).connect(ctx.destination);
+    o.start(); o.stop(t+dur);
+  }
+  function chime3(){ [523.25,659.25,783.99].forEach((f,i)=>setTimeout(()=>gentleTone(f,0.9,0.18),i*350)); }
+  function timeSignal(){ [523.25,659.25,783.99,1046.5].forEach((f,i)=>setTimeout(()=>gentleTone(f,1,0.20),i*500)); }
+
+  // ===== music engine =====
+  let musicTimer=null; let musicStep=0;
+  const musicScale=[261.63,293.66,329.63,392.00,440.00,392.00,329.63,293.66];
+  function startMusic(){
+    stopMusic(); ensure(); if(ctx.state!=='running'){ ctx.resume().catch(()=>{}); }
+    musicStep=0;
+    musicTimer=setInterval(()=>{
+      const f=musicScale[musicStep%musicScale.length];
+      gentleTone(f,1.2,0.16);
+      musicStep++; updateCountdown();
+    },1200);
+  }
+  function stopMusic(){ if(musicTimer){ clearInterval(musicTimer); musicTimer=null; } }
+
+  // ===== daypart scripts =====
+  function daypart(){ const h=new Date().getHours(); if(h<6)return'night'; if(h<12)return'morning'; if(h<18)return'noon'; return'evening'; }
+  const scripts={
+    night:{news:['夜の時間帯となりました。街は静かです。','多くの建物で照明が使われています。'],weather:['このあと気温は下がります。','夜は寒くなりそうです。']},
+    morning:{news:['朝の時間帯です。','多くの人が活動を始めています。'],weather:['朝は空気がひんやりしています。','このあと少し暖かくなります。']},
+    noon:{news:['日中の時間帯です。','人の動きが活発です。'],weather:['昼は気温が上がりやすいでしょう。','屋外では水分補給を心がけましょう。']},
+    evening:{news:['夕方の時間帯です。','帰宅する人の流れが見られます。'],weather:['このあと夜に向けて気温が下がります。','夜は肌寒く感じられそうです。']}
+  };
+  const sleep=m=>new Promise(r=>setTimeout(r,m));
+
+  // ===== state =====
+  let powered=false; let running=false; let lastSignalMin=-1;
+
+  function nextSignalDate(from=new Date()){
+    const d=new Date(from);
+    const m=d.getMinutes()%5;
+    d.setSeconds(0,0);
+    d.setMinutes(d.getMinutes()+(5-m||5));
+    return d;
+  }
+
+  function updateCountdown(){
+    const now=new Date();
+    const next=nextSignalDate(now);
+    const diff=Math.max(0,Math.floor((next-now)/1000));
+    const mm=Math.floor(diff/60); const ss=diff%60;
+    if(countdown) countdown.textContent=`次の時報まで ${mm}分${ss}秒`;
+  }
+  setInterval(updateCountdown,1000); updateCountdown();
+
+  function blockOf(d){ const h=d.getHours(); if(h<6) return '深夜番'; if(h<12) return '朝番'; if(h<18) return '昼番'; return '夕方番'; }
+  let currentBlock=blockOf(new Date());
+  function updateBadge(){ if(programBadge) programBadge.textContent=currentBlock; }
+  updateBadge();
+
+  async function runCycle(){
+    if(running||!powered) return; running=true;
+
+    label.textContent='時報'; title.textContent='時報'; text.textContent='まもなく正確な時刻をお知らせします'; ticker.textContent='これは架空の放送です';
+    timeSignal(); await sleep(4000);
+
+    label.textContent='ニュース'; title.textContent='ニュース'; text.textContent='まもなくニュースです'; chime3(); await sleep(2000);
+    const dp=scripts[daypart()]; ticker.textContent='このニュースは一部本当のことが書いてありますが基本的には架空です信用しないでください';
+    text.textContent=dp.news.join(' '); await sleep(9000);
+
+    label.textContent='天気予報'; title.textContent='天気予報'; text.textContent='続いて天気予報です'; chime3(); await sleep(2000);
+    text.textContent=dp.weather.join(' '); await sleep(9000);
+
+    label.textContent='CM'; title.textContent='CM'; ticker.textContent='このニュースは一部本当のことが書いてありますが基本的には架空です信用しないでください';
+    text.textContent='地域のお店からのお知らせです。ぜひご利用ください。'; gentleTone(392,2,0.16); await sleep(6000);
+
+    label.textContent='音楽の時間'; ticker.textContent='これは架空の放送です';
+    startMusic();
+    const now=new Date();
+    const remain=Math.max(1,Math.floor((nextSignalDate(now)-now)/1000));
+    await sleep(remain*1000);
+    stopMusic(); running=false;
+  }
+
+  function scheduler(){
+    if(!powered) return;
+    const d=new Date();
+    if(d.getMinutes()%5===0 && d.getSeconds()<2 && lastSignalMin!==d.getMinutes()){
+      const newBlock=blockOf(d);
+      if(newBlock!==currentBlock){ currentBlock=newBlock; updateBadge(); renderGuide(); }
+      lastSignalMin=d.getMinutes(); runCycle();
+    }
+  }
+  setInterval(scheduler,1000);
+
+  // ===== program guide =====
+  function renderCycle(){
+    const items=['時報','ニュース','天気予報','CM','音楽'];
+    cycleList.innerHTML=''; items.forEach(t=>{const li=document.createElement('li'); li.textContent=t; cycleList.appendChild(li);});
+  }
+  function renderHour(){
+    hourList.innerHTML=''; const now=new Date(); const base=nextSignalDate(now);
+    for(let i=0;i<12;i++){ const t=new Date(base.getTime()+i*5*60000); const li=document.createElement('li'); const hh=String(t.getHours()).padStart(2,'0'); const mm=String(t.getMinutes()).padStart(2,'0'); li.textContent=`${hh}:${mm} 時報（→ニュース→天気予報→CM→音楽）`; hourList.appendChild(li);} }
+  function renderGuide(){
+    if(!guide) return; const now=new Date(); let t=new Date(now); const end=new Date(now.getTime()+6*60*60*1000); let html='';
+    while(t<=end){ const sig=nextSignalDate(t); const b=blockOf(sig); const hh=String(sig.getHours()).padStart(2,'0'); const mm=String(sig.getMinutes()).padStart(2,'0'); html+=`<div>${hh}:${mm}　${b} 開始</div>`; t=new Date(sig.getTime()+1000);} guide.innerHTML=html; }
+  renderGuide();
+
+  if(guideBtn){ guideBtn.addEventListener('click',()=>{ renderCycle(); renderHour(); panel.style.display='block'; }); }
+  if(closeGuide){ closeGuide.addEventListener('click',()=>{ panel.style.display='none'; }); }
+
+  // ===== controls =====
+  async function powerToggle(){ powered=!powered; await unlock(); if(powered){ title.textContent='待機中'; text.textContent='次の時報を待っています'; } else{ title.textContent='電源オフ'; text.textContent=''; stopMusic(); } }
+  if(powerBtn) powerBtn.addEventListener('click',powerToggle);
+  const vd=$('volDown'), vu=$('volUp');
+  if(vd) vd.addEventListener('click',()=>{ masterVolume=Math.max(0,Math.round((masterVolume-0.1)*10)/10); updateVolLabel(); });
+  if(vu) vu.addEventListener('click',()=>{ masterVolume=Math.min(1,Math.round((masterVolume+0.1)*10)/10); updateVolLabel(); });
+  updateVolLabel();
+})();
+</script>
+</body>
+</html>
